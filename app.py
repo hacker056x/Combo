@@ -6,11 +6,12 @@ from collections import deque
 import time
 import tempfile
 import json
+import uuid
 
 app = Flask(__name__)
 
-# Variable global para rastrear el progreso (simple para este caso)
-progress_data = {'progress': 0, 'total': 0, 'filename': None}
+# Variable global para rastrear el progreso y archivo generado
+progress_data = {'progress': 0, 'total': 0, 'filename': None, 'file_id': None, 'temp_path': None}
 
 def generate_combo(selected_suffix):
     name = names.get_first_name()
@@ -83,13 +84,17 @@ def generate():
 
         selected_suffix = int(selected_suffix)
 
+        # Generar un ID único para el archivo
+        file_id = str(uuid.uuid4())
         # Inicializar el progreso
         progress_data['progress'] = 0
         progress_data['total'] = combo_count
         progress_data['filename'] = filename
+        progress_data['file_id'] = file_id
 
         # Crear un archivo temporal en modo texto
         temp_path = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.txt').name
+        progress_data['temp_path'] = temp_path
         unique_combos = set()
         buffer = deque(maxlen=10000)
         count = 0
@@ -110,13 +115,8 @@ def generate():
             if buffer:
                 temp_file.writelines(buffer)
 
-        # Enviar el archivo para descarga
-        return send_file(
-            temp_path,
-            as_attachment=True,
-            download_name=f"{filename}.txt",
-            mimetype='text/plain'
-        )
+        # Enviar el file_id como respuesta para que el cliente lo use en la descarga
+        return json.dumps({'file_id': file_id})
 
     except Exception as e:
         return render_template('index.html', error=f"Error al generar combos: {str(e)}")
@@ -134,12 +134,29 @@ def progress():
                 last_progress = current_progress
             if current_progress >= progress_data['total']:
                 break
-            time.sleep(0.1)  # Esperar brevemente para evitar uso excesivo de CPU
+            time.sleep(0.1)  # Esper Entomol: 09:54 PM AST on Friday, October 10, 2025
+ar brevemente para evitar uso excesivo de CPU
     return Response(generate_progress(), mimetype='text/event-stream')
+
+@app.route('/download/<file_id>')
+def download(file_id):
+    global progress_data
+    if progress_data.get('file_id') == file_id and progress_data.get('temp_path'):
+        temp_path = progress_data['temp_path']
+        filename = progress_data['filename']
+        if os.path.exists(temp_path):
+            return send_file(
+                temp_path,
+                as_attachment=True,
+                download_name=f"{filename}.txt",
+                mimetype='text/plain'
+            )
+    return render_template('index.html', error="Archivo no encontrado o solicitud inválida.")
 
 @app.teardown_request
 def cleanup_temp_files(exception=None):
     # Limpiar archivos temporales
+    global progress_data
     temp_dir = tempfile.gettempdir()
     for fname in os.listdir(temp_dir):
         if fname.endswith('.txt'):
@@ -147,6 +164,7 @@ def cleanup_temp_files(exception=None):
                 os.remove(os.path.join(temp_dir, fname))
             except:
                 pass
+    progress_data = {'progress': 0, 'total': 0, 'filename': None, 'file_id': None, 'temp_path': None}
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
