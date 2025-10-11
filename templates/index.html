@@ -54,11 +54,17 @@
         button:hover { background-color: #218838; }
         .error { color: red; }
         .success { color: green; }
+        #progress-container { display: none; margin-top: 20px; }
+        #progress-bar { width: 100%; height: 20px; }
+        #progress-text { text-align: center; margin-top: 10px; font-size: 16px; }
+        #download-link { display: none; text-align: center; margin-top: 20px; }
+        #download-link a { color: #28a745; text-decoration: none; font-weight: bold; }
+        #download-link a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
-    <h1>Generador de Combos IPTV 2025</h1>
-    <form method="POST" action="/generate">
+    <h1>Generador de Combos IPTV</h1>
+    <form id="combo-form" method="POST" action="/generate">
         <label for="filename">Nombre del archivo de combo (sin extensión):</label>
         <input type="text" name="filename" id="filename" required placeholder="Ejemplo: micombo">
         
@@ -86,12 +92,48 @@
         
         <button type="submit">Generar y Descargar</button>
     </form>
+    <div id="progress-container">
+        <progress id="progress-bar" value="0" max="100"></progress>
+        <p id="progress-text">0%</p>
+    </div>
+    <div id="download-link">
+        <p>¡Generación completada! <a id="download-anchor" href="#">Descarga tu archivo</a></p>
+    </div>
     {% if error %}
         <p class="error">{{ error }}</p>
     {% endif %}
     {% if success %}
         <p class="success">{{ success }}</p>
     {% endif %}
-<h1>By @hacker056</h1>
+
+    <script>
+        document.getElementById('combo-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            document.getElementById('combo-form').style.display = 'none';
+            document.getElementById('progress-container').style.display = 'block';
+            document.getElementById('download-link').style.display = 'none';
+
+            const source = new EventSource('/progress');
+            source.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                const progress = data.progress;
+                document.getElementById('progress-bar').value = progress;
+                document.getElementById('progress-text').textContent = `${progress.toFixed(2)}%`;
+                if (progress >= 100) {
+                    source.close();
+                    document.getElementById('progress-container').style.display = 'none';
+                    document.getElementById('download-link').style.display = 'block';
+                    const filename = document.getElementById('filename').value || 'combo';
+                    document.getElementById('download-anchor').href = '/generate?' + new URLSearchParams(new FormData(document.getElementById('combo-form')));
+                }
+            };
+
+            // Enviar el formulario en segundo plano
+            fetch('/generate', {
+                method: 'POST',
+                body: new FormData(document.getElementById('combo-form'))
+            });
+        });
+    </script>
 </body>
 </html>
