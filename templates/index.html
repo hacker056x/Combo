@@ -123,8 +123,6 @@
                     source.close();
                     document.getElementById('progress-container').style.display = 'none';
                     document.getElementById('download-link').style.display = 'block';
-                    const filename = document.getElementById('filename').value || 'combo';
-                    document.getElementById('download-anchor').href = '/generate?' + new URLSearchParams(new FormData(document.getElementById('combo-form')));
                 }
             };
 
@@ -132,6 +130,13 @@
             fetch('/generate', {
                 method: 'POST',
                 body: new FormData(document.getElementById('combo-form'))
+            }).then(response => response.json()).then(data => {
+                document.getElementById('download-anchor').href = `/download/${data.file_id}`;
+            }).catch(error => {
+                document.getElementById('progress-container').style.display = 'none';
+                document.getElementById('combo-form').style.display = 'block';
+                document.getElementById('download-link').style.display = 'none';
+                document.querySelector('.error').textContent = `Error: ${error.message}`;
             });
         });
     </script>
