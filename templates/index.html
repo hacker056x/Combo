@@ -1,0 +1,97 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Combos IPTV</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f4f4f4; }
+        h1 { color: #2c3e50; text-align: center; }
+        form { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        label { display: block; margin: 10px 0 5px; font-weight: bold; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        select { width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { background-color: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #218838; }
+        .error { color: red; }
+        .success { color: green; }
+    </style>
+</head>
+<body>
+    <h1>Generador de Combos IPTV 2025</h1>
+    <form method="POST" action="/generate">
+        <label for="filename">Nombre del archivo de combo (sin extensión):</label>
+        <input type="text" name="filename" id="filename" required placeholder="Ejemplo: micombo">
+        
+        <label for="combo_count">Cantidad de combos a generar:</label>
+        <input type="number" name="combo_count" id="combo_count" required placeholder="Ejemplo: 1000" min="1" max="100000">
+        
+        <label for="suffixes">Variación de nombre de usuario:</label>
+        <select name="suffixes" id="suffixes" required>
+            <option value="" disabled selected>Selecciona una variación</option>
+            <option value="1">Fechas de nacimiento (1900-2050)</option>
+            <option value="2">Números (0-1000)</option>
+            <option value="3">Letras al final</option>
+            <option value="4">Letras al inicio</option>
+            <option value="5">Números (000-999) al inicio</option>
+            <option value="6">Años de nacimiento al inicio (1900-2050)</option>
+            <option value="7">Años al inicio (1900-2050) + Números al final (000-999)</option>
+            <option value="8">Números al inicio (000-999) + Años al final (1900-2050)</option>
+            <option value="9">Números al inicio y al final (000-999)</option>
+            <option value="10">Números al inicio (123-123456)</option>
+            <option value="11">Números al final (123-123456)</option>
+            <option value="12">Ceros al final (0 a 0000)</option>
+            <option value="13">Mixto (todas las anteriores)</option>
+            <option value="15">Sin variación</option>
+        </select>
+        
+        <button type="submit">Generar y Descargar</button>
+    </form>
+    {% if error %}
+        <p class="error">{{ error }}</p>
+    {% endif %}
+    {% if success %}
+        <p class="success">{{ success }}</p>
+    {% endif %}
+<h1>By @hacker056</h1>
+</body>
+</html>
