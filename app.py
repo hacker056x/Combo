@@ -5,8 +5,12 @@ from flask import Flask, request, send_file, render_template, Response
 from collections import deque
 import time
 import tempfile
+import json
 
 app = Flask(__name__)
+
+# Variable global para rastrear el progreso (simple para este caso)
+progress_data = {'progress': 0, 'total': 0, 'filename': None}
 
 def generate_combo(selected_suffix):
     name = names.get_first_name()
@@ -63,6 +67,7 @@ def index():
 
 @app.route('/generate', methods=['POST'])
 def generate():
+    global progress_data
     try:
         filename = request.form.get('filename', '').strip()
         if not filename:
@@ -78,13 +83,18 @@ def generate():
 
         selected_suffix = int(selected_suffix)
 
-        # Crear un archivo temporal en modo texto
-        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.txt') as temp_file:
-            temp_path = temp_file.name
-            unique_combos = set()
-            buffer = deque(maxlen=10000)
-            count = 0
+        # Inicializar el progreso
+        progress_data['progress'] = 0
+        progress_data['total'] = combo_count
+        progress_data['filename'] = filename
 
+        # Crear un archivo temporal en modo texto
+        temp_path = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.txt').name
+        unique_combos = set()
+        buffer = deque(maxlen=10000)
+        count = 0
+
+        with open(temp_path, 'w', encoding='utf-8') as temp_file:
             start_time = time.time()
             while count < combo_count:
                 combo = generate_combo(selected_suffix)
@@ -92,6 +102,7 @@ def generate():
                     unique_combos.add(combo)
                     buffer.append(combo + "\n")
                     count += 1
+                    progress_data['progress'] = count
                     if len(buffer) == buffer.maxlen:
                         temp_file.writelines(buffer)
                         buffer.clear()
@@ -109,6 +120,22 @@ def generate():
 
     except Exception as e:
         return render_template('index.html', error=f"Error al generar combos: {str(e)}")
+
+@app.route('/progress')
+def progress():
+    def generate_progress():
+        global progress_data
+        last_progress = -1
+        while True:
+            current_progress = progress_data['progress']
+            if current_progress != last_progress:
+                percentage = (current_progress / progress_data['total'] * 100) if progress_data['total'] > 0 else 0
+                yield f"data: {json.dumps({'progress': percentage})}\n\n"
+                last_progress = current_progress
+            if current_progress >= progress_data['total']:
+                break
+            time.sleep(0.1)  # Esperar brevemente para evitar uso excesivo de CPU
+    return Response(generate_progress(), mimetype='text/event-stream')
 
 @app.teardown_request
 def cleanup_temp_files(exception=None):
