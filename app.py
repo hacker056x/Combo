@@ -78,8 +78,8 @@ def generate():
 
         selected_suffix = int(selected_suffix)
 
-        # Crear un archivo temporal para los combos
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as temp_file:
+        # Crear un archivo temporal en modo texto
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.txt') as temp_file:
             temp_path = temp_file.name
             unique_combos = set()
             buffer = deque(maxlen=10000)
