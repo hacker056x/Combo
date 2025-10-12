@@ -1,10 +1,10 @@
 import random
 import names
 import os
-from flask import Flask, request, send_file, render_template, Response
+import tempfile
+from flask import Flask, request, send_file, render_template, Response, stream_with_context
 from collections import deque
 import time
-import tempfile
 
 app = Flask(__name__)
 
@@ -61,58 +61,67 @@ def generate_combo(selected_suffix):
 def index():
     return render_template('index.html')
 
-@app.route('/generate', methods=['POST'])
-def generate():
-    try:
-        filename = request.form.get('filename', '').strip()
-        if not filename:
-            return render_template('index.html', error="El nombre del archivo es obligatorio.")
+@app.route('/generate_stream')
+def generate_stream():
+    filename = request.args.get('filename', '').strip()
+    combo_count = int(request.args.get('combo_count', 0))
+    selected_suffix = request.args.get('suffixes')
 
-        combo_count = int(request.form.get('combo_count', 0))
-        if combo_count <= 0 or combo_count > 100000:
-            return render_template('index.html', error="La cantidad de combos debe estar entre 1 y 100,000.")
+    if not filename:
+        return Response('{"type":"error","value":"El nombre del archivo es obligatorio."}', mimetype='text/event-stream')
+    if combo_count <= 0 or combo_count > 100000:
+        return Response('{"type":"error","value":"La cantidad de combos debe estar entre 1 y 100,000."}', mimetype='text/event-stream')
+    if not selected_suffix or not selected_suffix.isdigit():
+        return Response('{"type":"error","value":"Debes seleccionar una variación de nombre de usuario."}', mimetype='text/event-stream')
 
-        selected_suffix = request.form.get('suffixes')
-        if not selected_suffix or not selected_suffix.isdigit():
-            return render_template('index.html', error="Debes seleccionar una variación de nombre de usuario.")
+    selected_suffix = int(selected_suffix)
+    temp_file = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.txt')
+    temp_path = temp_file.name
 
-        selected_suffix = int(selected_suffix)
+    def generate():
+        unique_combos = set()
+        buffer = deque(maxlen=10000)
+        count = 0
 
-        # Crear un archivo temporal en modo texto
-        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.txt') as temp_file:
-            temp_path = temp_file.name
-            unique_combos = set()
-            buffer = deque(maxlen=10000)
-            count = 0
-
-            start_time = time.time()
+        try:
             while count < combo_count:
                 combo = generate_combo(selected_suffix)
                 if combo not in unique_combos:
                     unique_combos.add(combo)
                     buffer.append(combo + "\n")
                     count += 1
+                    yield f'data: {{"type":"combo","value":"{combo}"}}\n\n'
                     if len(buffer) == buffer.maxlen:
                         temp_file.writelines(buffer)
                         buffer.clear()
-            
             if buffer:
                 temp_file.writelines(buffer)
+            temp_file.close()
+            yield f'data: {{"type":"done","value":"Generación completada."}}\n\n'
+        except Exception as e:
+            yield f'data: {{"type":"error","value":"Error al generar combos: {str(e)}"}}\n\n'
+            temp_file.close()
 
-        # Enviar el archivo para descarga
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+
+@app.route('/download')
+def download():
+    filename = request.args.get('filename', '').strip()
+    temp_dir = tempfile.gettempdir()
+    temp_path = os.path.join(temp_dir, f"{filename}.txt")
+
+    if os.path.exists(temp_path):
         return send_file(
             temp_path,
             as_attachment=True,
             download_name=f"{filename}.txt",
             mimetype='text/plain'
         )
-
-    except Exception as e:
-        return render_template('index.html', error=f"Error al generar combos: {str(e)}")
+    else:
+        return render_template('index.html', error="Archivo no encontrado. Por favor, genera los combos nuevamente.")
 
 @app.teardown_request
 def cleanup_temp_files(exception=None):
-    # Limpiar archivos temporales
     temp_dir = tempfile.gettempdir()
     for fname in os.listdir(temp_dir):
         if fname.endswith('.txt'):
