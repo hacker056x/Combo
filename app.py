@@ -77,6 +77,8 @@ def generate_stream():
     selected_suffix = int(selected_suffix)
     temp_file = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.txt')
     temp_path = temp_file.name
+    app.config['temp_files'] = app.config.get('temp_files', {})
+    app.config['temp_files'][filename] = temp_path
 
     def generate():
         unique_combos = set()
@@ -107,10 +109,9 @@ def generate_stream():
 @app.route('/download')
 def download():
     filename = request.args.get('filename', '').strip()
-    temp_dir = tempfile.gettempdir()
-    temp_path = os.path.join(temp_dir, f"{filename}.txt")
+    temp_path = app.config.get('temp_files', {}).get(filename)
 
-    if os.path.exists(temp_path):
+    if temp_path and os.path.exists(temp_path):
         response = send_file(
             temp_path,
             as_attachment=True,
@@ -123,11 +124,12 @@ def download():
 
 @app.teardown_request
 def cleanup_temp_files(exception=None):
-    temp_dir = tempfile.gettempdir()
-    for fname in os.listdir(temp_dir):
-        if fname.endswith('.txt'):
+    temp_files = app.config.get('temp_files', {})
+    for fname, temp_path in list(temp_files.items()):
+        if os.path.exists(temp_path):
             try:
-                os.remove(os.path.join(temp_dir, fname))
+                os.remove(temp_path)
+                del temp_files[fname]
             except:
                 pass
 
