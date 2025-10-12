@@ -1,217 +1,148 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
+import random
+import names
+import os
+import tempfile
+from flask import Flask, request, send_file, render_template, Response, stream_with_context
+from collections import deque
+import time
 
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
+app = Flask(__name__)
 
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Generador de Combos IPTV</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f4f4f4; }
-        h1 { color: #2c3e50; text-align: center; }
-        form { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        label { display: block; margin: 10px 0 5px; font-weight: bold; }
-        input[type="text"], input[type="number"] { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
-        select { width: 100%; padding: 8px; margin-bottom: 10px; }
-        button { background-color: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #218838; }
-        .error { color: red; }
-        #combo-output { margin-top: 20px; max-height: 300px; overflow-y: auto; background: white; padding: 10px; border-radius: 4px; border: 1px solid #ccc; }
-        #stop-button { background-color: #dc3545; margin-top: 10px; }
-        #stop-button:hover { background-color: #c82333; }
-    </style>
-</head>
-<body>
-    <h1>Generador de Combos IPTV</h1>
-    <form id="combo-form">
-        <label for="filename">Nombre del archivo de combo (sin extensión):</label>
-        <input type="text" name="filename" id="filename" required placeholder="Ejemplo: micombo">
-        
-        <label for="combo_count">Cantidad de combos a generar:</label>
-        <input type="number" name="combo_count" id="combo_count" required placeholder="Ejemplo: 1000" min="1" max="100000">
-        
-        <label for="suffixes">Variación de nombre de usuario:</label>
-        <select name="suffixes" id="suffixes" required>
-            <option value="" disabled selected>Selecciona una variación</option>
-            <option value="1">Fechas de nacimiento (1900-2050)</option>
-            <option value="2">Números (0-1000)</option>
-            <option value="3">Letras al final</option>
-            <option value="4">Letras al inicio</option>
-            <option value="5">Números (000-999) al inicio</option>
-            <option value="6">Años de nacimiento al inicio (1900-2050)</option>
-            <option value="7">Años al inicio (1900-2050) + Números al final (000-999)</option>
-            <option value="8">Números al inicio (000-999) + Años al final (1900-2050)</option>
-            <option value="9">Números al inicio y al final (000-999)</option>
-            <option value="10">Números al inicio (123-123456)</option>
-            <option value="11">Números al final (123-123456)</option>
-            <option value="12">Ceros al final (0 a 0000)</option>
-            <option value="13">Mixto (todas las anteriores)</option>
-            <option value="15">Sin variación</option>
-        </select>
-        
-        <button type="submit">Generar y Mostrar</button>
-    </form>
-    <button id="stop-button" style="display: none;">Detener y Descargar</button>
-    <div id="combo-output"></div>
-    <p id="error" class="error" style="display: none;"></p>
+def generate_combo(selected_suffix):
+    name = names.get_first_name()
     
-    <h1>By @hacker056</h1>
+    suffix_type = int(selected_suffix)
+    suffix = ''
+    
+    if suffix_type == 1:
+        suffix = str(random.randint(1900, 2050))
+    elif suffix_type == 2:
+        suffix = str(random.randint(0, 1000))
+    elif suffix_type == 3:
+        suffix = random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
+    elif suffix_type == 4:
+        prefix = random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
+        name = f"{prefix}{name}"
+    elif suffix_type == 5:
+        prefix = str(random.randint(0, 999)).zfill(3)
+        name = f"{prefix}{name}"
+    elif suffix_type == 6:
+        prefix = str(random.randint(1900, 2050))
+        name = f"{prefix}{name}"
+    elif suffix_type == 7:
+        prefix = str(random.randint(1900, 2050))
+        suffix = str(random.randint(0, 999)).zfill(3)
+        name = f"{prefix}{name}"
+    elif suffix_type == 8:
+        prefix = str(random.randint(0, 999)).zfill(3)
+        suffix = str(random.randint(1900, 2050))
+        name = f"{prefix}{name}"
+    elif suffix_type == 9:
+        prefix = str(random.randint(0, 999)).zfill(3)
+        suffix = str(random.randint(0, 999)).zfill(3)
+        name = f"{prefix}{name}"
+    elif suffix_type == 10:
+        prefix = str(random.randint(123, 123456))
+        name = f"{prefix}{name}"
+    elif suffix_type == 11:
+        suffix = str(random.randint(123, 123456))
+    elif suffix_type == 12:
+        suffix = '0' * random.randint(1, 4)
+    elif suffix_type == 13:  # Mixto
+        return generate_combo(random.choice(list(map(str, range(1, 13)))))
+    elif suffix_type == 15:  # Sin variación
+        pass
 
-    <script>
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-            return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-            if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-                try {
-                    var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                    var firstSheetName = workbook.SheetNames[0];
-                    var worksheet = workbook.Sheets[firstSheetName];
-                    var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                    var filteredData = jsonData.filter(row => row.some(filledCell));
-                    var headerRowIndex = filteredData.findIndex((row, index) =>
-                        row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                    );
-                    if (headerRowIndex === -1 || headerRowIndex > 25) {
-                        headerRowIndex = 0;
-                    }
-                    var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
-                    csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                    return csv;
-                } catch (e) {
-                    console.error(e);
-                    return "";
-                }
-            }
-            return gk_fileData[filename] || "";
-        }
+    username = f"{name}{suffix}"
+    password = names.get_last_name()  # Contraseña aleatoria
+    return f"{username}:{password}"
 
-        const form = document.getElementById('combo-form');
-        const stopButton = document.getElementById('stop-button');
-        const outputDiv = document.getElementById('combo-output');
-        const errorDiv = document.getElementById('error');
-        let eventSource = null;
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-        function initiateDownload(filename, retries = 3, delay = 1000) {
-            const url = `/download?filename=${encodeURIComponent(filename)}`;
-            fetch(url)
-                .then(response => {
-                    if (response.ok && response.headers.get('content-type').includes('text/plain')) {
-                        return response.blob().then(blob => {
-                            const link = document.createElement('a');
-                            link.href = window.URL.createObjectURL(blob);
-                            link.download = `${filename}.txt`;
-                            document.body.appendChild(link);
-                            link.click();
-                            document.body.removeChild(link);
-                            window.URL.revokeObjectURL(link.href);
-                        });
-                    } else {
-                        if (retries > 0) {
-                            setTimeout(() => initiateDownload(filename, retries - 1, delay * 2), delay);
-                        } else {
-                            errorDiv.textContent = 'Error: No se pudo descargar el archivo de combos. Intenta de nuevo.';
-                            errorDiv.style.display = 'block';
-                        }
-                    }
-                })
-                .catch(() => {
-                    if (retries > 0) {
-                        setTimeout(() => initiateDownload(filename, retries - 1, delay * 2), delay);
-                    } else {
-                        errorDiv.textContent = 'Error: Fallo en la conexión para descargar el archivo.';
-                        errorDiv.style.display = 'block';
-                    }
-                });
-        }
+@app.route('/generate_stream')
+def generate_stream():
+    filename = request.args.get('filename', '').strip()
+    combo_count = int(request.args.get('combo_count', 0))
+    selected_suffix = request.args.get('suffixes')
 
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            outputDiv.innerHTML = '';
-            errorDiv.style.display = 'none';
-            stopButton.style.display = 'block';
+    if not filename:
+        return Response('{"type":"error","value":"El nombre del archivo es obligatorio."}', mimetype='text/event-stream')
+    if combo_count <= 0 or combo_count > 100000:
+        return Response('{"type":"error","value":"La cantidad de combos debe estar entre 1 y 100,000."}', mimetype='text/event-stream')
+    if not selected_suffix or not selected_suffix.isdigit():
+        return Response('{"type":"error","value":"Debes seleccionar una variación de nombre de usuario."}', mimetype='text/event-stream')
 
-            const filename = document.getElementById('filename').value;
-            const comboCount = document.getElementById('combo_count').value;
-            const suffixes = document.getElementById('suffixes').value;
+    selected_suffix = int(selected_suffix)
+    temp_file = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.txt')
+    temp_path = temp_file.name
+    app.config['temp_files'] = app.config.get('temp_files', {})
+    app.config['temp_files'][filename] = temp_path
 
-            eventSource = new EventSource(`/generate_stream?filename=${encodeURIComponent(filename)}&combo_count=${comboCount}&suffixes=${suffixes}`);
-            
-            eventSource.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.type === 'combo') {
-                    const combo = document.createElement('div');
-                    combo.textContent = data.value;
-                    outputDiv.appendChild(combo);
-                    outputDiv.scrollTop = outputDiv.scrollHeight;
-                } else if (data.type === 'error') {
-                    errorDiv.textContent = data.value;
-                    errorDiv.style.display = 'block';
-                    eventSource.close();
-                    stopButton.style.display = 'none';
-                } else if (data.type === 'done') {
-                    eventSource.close();
-                    stopButton.style.display = 'none';
-                    initiateDownload(filename);
-                }
-            };
+    def generate():
+        unique_combos = set()
+        buffer = deque(maxlen=10000)
+        count = 0
 
-            eventSource.onerror = () => {
-                errorDiv.textContent = 'Error en la conexión con el servidor.';
-                errorDiv.style.display = 'block';
-                eventSource.close();
-                stopButton.style.display = 'none';
-            };
-        });
+        try:
+            while count < combo_count:
+                combo = generate_combo(selected_suffix)
+                if combo not in unique_combos:
+                    unique_combos.add(combo)
+                    buffer.append(combo + "\n")
+                    count += 1
+                    yield f'data: {{"type":"combo","value":"{combo}"}}\n\n'
+                    if len(buffer) == buffer.maxlen:
+                        temp_file.writelines(buffer)
+                        buffer.clear()
+            if buffer:
+                temp_file.writelines(buffer)
+            temp_file.close()
+            yield f'data: {{"type":"done","value":"Generación completada."}}\n\n'
+        except Exception as e:
+            yield f'data: {{"type":"error","value":"Error al generar combos: {str(e)}"}}\n\n'
+            temp_file.close()
 
-        stopButton.addEventListener('click', () => {
-            if (eventSource) {
-                eventSource.close();
-                const filename = document.getElementById('filename').value;
-                initiateDownload(filename);
-                stopButton.style.display = 'none';
-            }
-        });
-    </script>
-</body>
-</html>
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+
+@app.route('/download')
+def download():
+    filename = request.args.get('filename', '').strip()
+    temp_path = app.config.get('temp_files', {}).get(filename)
+
+    if temp_path and os.path.exists(temp_path):
+        response = send_file(
+            temp_path,
+            as_attachment=True,
+            download_name=f"{filename}.txt",
+            mimetype='text/plain'
+        )
+        # Marcar el archivo para limpieza después de la descarga
+        app.config['temp_files_to_clean'] = app.config.get('temp_files_to_clean', set())
+        app.config['temp_files_to_clean'].add(temp_path)
+        return response
+    else:
+        return render_template('index.html', error="Archivo no encontrado. Por favor, genera los combos nuevamente.")
+
+@app.teardown_request
+def cleanup_temp_files(exception=None):
+    temp_files_to_clean = app.config.get('temp_files_to_clean', set())
+    for temp_path in list(temp_files_to_clean):
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+                temp_files_to_clean.remove(temp_path)
+            except:
+                pass
+    temp_files = app.config.get('temp_files', {})
+    for fname, temp_path in list(temp_files.items()):
+        if temp_path not in temp_files_to_clean and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+                del temp_files[fname]
+            except:
+                pass
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
