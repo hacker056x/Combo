@@ -2,6 +2,7 @@ import random
 import names
 import os
 import tempfile
+import uuid
 from flask import Flask, request, send_file, render_template, Response, stream_with_context
 from collections import deque
 import time
@@ -71,8 +72,9 @@ def generate_stream():
     filename = request.args.get('filename', '').strip()
     combo_count = int(request.args.get('combo_count', 0))
     selected_suffix = request.args.get('suffixes')
+    session_id = str(uuid.uuid4())  # Generar un ID único para la sesión
 
-    logger.debug(f"Iniciando generación para filename={filename}, combo_count={combo_count}, suffixes={selected_suffix}")
+    logger.debug(f"Iniciando generación para session_id={session_id}, filename={filename}, combo_count={combo_count}, suffixes={selected_suffix}")
 
     if not filename:
         logger.error("Nombre de archivo no proporcionado")
@@ -88,8 +90,8 @@ def generate_stream():
     temp_file = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.txt')
     temp_path = temp_file.name
     app.config['temp_files'] = app.config.get('temp_files', {})
-    app.config['temp_files'][filename] = temp_path
-    logger.debug(f"Archivo temporal creado: {temp_path}")
+    app.config['temp_files'][session_id] = temp_path
+    logger.debug(f"Archivo temporal creado: {temp_path} para session_id={session_id}")
 
     def generate():
         unique_combos = set()
@@ -112,8 +114,8 @@ def generate_stream():
                 temp_file.writelines(buffer)
                 logger.debug(f"Buffer final escrito en archivo temporal: {temp_path}")
             temp_file.close()
-            yield f'data: {{"type":"done","value":"Generación completada."}}\n\n'
-            logger.debug("Generación completada")
+            yield f'data: {{"type":"done","value":"Generación completada.","session_id":"{session_id}"}}\n\n'
+            logger.debug(f"Generación completada para session_id={session_id}")
         except Exception as e:
             logger.error(f"Error durante la generación: {str(e)}")
             yield f'data: {{"type":"error","value":"Error al generar combos: {str(e)}"}}\n\n'
@@ -123,11 +125,12 @@ def generate_stream():
 
 @app.route('/download')
 def download():
+    session_id = request.args.get('session_id', '').strip()
     filename = request.args.get('filename', '').strip()
-    temp_path = app.config.get('temp_files', {}).get(filename)
 
-    logger.debug(f"Solicitud de descarga para filename={filename}, temp_path={temp_path}")
+    logger.debug(f"Solicitud de descarga para session_id={session_id}, filename={filename}")
 
+    temp_path = app.config.get('temp_files', {}).get(session_id)
     if temp_path and os.path.exists(temp_path):
         logger.debug(f"Enviando archivo: {temp_path}")
         try:
@@ -146,7 +149,7 @@ def download():
             logger.error(f"Error al enviar archivo: {str(e)}")
             return render_template('index.html', error=f"Error al descargar el archivo: {str(e)}")
     else:
-        logger.error(f"Archivo no encontrado: {temp_path}")
+        logger.error(f"Archivo no encontrado para session_id={session_id}, temp_path={temp_path}")
         return render_template('index.html', error="Archivo no encontrado. Por favor, genera los combos nuevamente.")
 
 @app.teardown_request
@@ -161,11 +164,11 @@ def cleanup_temp_files(exception=None):
             except Exception as e:
                 logger.error(f"Error al eliminar archivo {temp_path}: {str(e)}")
     temp_files = app.config.get('temp_files', {})
-    for fname, temp_path in list(temp_files.items()):
+    for session_id, temp_path in list(temp_files.items()):
         if temp_path not in temp_files_to_clean and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
-                del temp_files[fname]
+                del temp_files[session_id]
                 logger.debug(f"Archivo obsoleto eliminado: {temp_path}")
             except Exception as e:
                 logger.error(f"Error al eliminar archivo obsoleto {temp_path}: {str(e)}")
