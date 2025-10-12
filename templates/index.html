@@ -132,10 +132,12 @@
         const errorDiv = document.getElementById('error');
         let eventSource = null;
 
-        function initiateDownload(filename, retries = 3, delay = 1000) {
+        function initiateDownload(filename, retries = 3, delay = 2000) {
+            console.log(`Intentando descargar: /download?filename=${filename}, reintentos restantes: ${retries}`);
             const url = `/download?filename=${encodeURIComponent(filename)}`;
             fetch(url)
                 .then(response => {
+                    console.log(`Respuesta del servidor: status=${response.status}, content-type=${response.headers.get('content-type')}`);
                     if (response.ok && response.headers.get('content-type').includes('text/plain')) {
                         return response.blob().then(blob => {
                             const link = document.createElement('a');
@@ -145,22 +147,28 @@
                             link.click();
                             document.body.removeChild(link);
                             window.URL.revokeObjectURL(link.href);
+                            console.log(`Descarga iniciada para ${filename}.txt`);
                         });
                     } else {
                         if (retries > 0) {
+                            console.log(`Reintentando descarga en ${delay}ms`);
                             setTimeout(() => initiateDownload(filename, retries - 1, delay * 2), delay);
                         } else {
                             errorDiv.textContent = 'Error: No se pudo descargar el archivo de combos. Intenta de nuevo.';
                             errorDiv.style.display = 'block';
+                            console.error('No se pudo descargar el archivo después de los reintentos');
                         }
                     }
                 })
-                .catch(() => {
+                .catch(err => {
+                    console.error(`Error en fetch: ${err}`);
                     if (retries > 0) {
+                        console.log(`Reintentando descarga en ${delay}ms`);
                         setTimeout(() => initiateDownload(filename, retries - 1, delay * 2), delay);
                     } else {
                         errorDiv.textContent = 'Error: Fallo en la conexión para descargar el archivo.';
                         errorDiv.style.display = 'block';
+                        console.error('Fallo en la conexión después de los reintentos');
                     }
                 });
         }
@@ -175,6 +183,7 @@
             const comboCount = document.getElementById('combo_count').value;
             const suffixes = document.getElementById('suffixes').value;
 
+            console.log(`Iniciando generación para filename=${filename}, combo_count=${comboCount}, suffixes=${suffixes}`);
             eventSource = new EventSource(`/generate_stream?filename=${encodeURIComponent(filename)}&combo_count=${comboCount}&suffixes=${suffixes}`);
             
             eventSource.onmessage = (event) => {
@@ -189,9 +198,11 @@
                     errorDiv.style.display = 'block';
                     eventSource.close();
                     stopButton.style.display = 'none';
+                    console.error(`Error del servidor: ${data.value}`);
                 } else if (data.type === 'done') {
                     eventSource.close();
                     stopButton.style.display = 'none';
+                    console.log('Generación completada, iniciando descarga');
                     initiateDownload(filename);
                 }
             };
@@ -201,6 +212,7 @@
                 errorDiv.style.display = 'block';
                 eventSource.close();
                 stopButton.style.display = 'none';
+                console.error('Error en la conexión SSE');
             };
         });
 
@@ -208,6 +220,7 @@
             if (eventSource) {
                 eventSource.close();
                 const filename = document.getElementById('filename').value;
+                console.log('Generación detenida, iniciando descarga');
                 initiateDownload(filename);
                 stopButton.style.display = 'none';
             }
