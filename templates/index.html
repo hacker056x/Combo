@@ -53,7 +53,6 @@
         button { background-color: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
         button:hover { background-color: #218838; }
         .error { color: red; }
-        .success { color: green; }
         #combo-output { margin-top: 20px; max-height: 300px; overflow-y: auto; background: white; padding: 10px; border-radius: 4px; border: 1px solid #ccc; }
         #stop-button { background-color: #dc3545; margin-top: 10px; }
         #stop-button:hover { background-color: #c82333; }
@@ -92,7 +91,6 @@
     <button id="stop-button" style="display: none;">Detener y Descargar</button>
     <div id="combo-output"></div>
     <p id="error" class="error" style="display: none;"></p>
-    <p id="success" class="success" style="display: none;"></p>
     
     <h1>By @hacker056</h1>
 
@@ -132,14 +130,12 @@
         const stopButton = document.getElementById('stop-button');
         const outputDiv = document.getElementById('combo-output');
         const errorDiv = document.getElementById('error');
-        const successDiv = document.getElementById('success');
         let eventSource = null;
 
         form.addEventListener('submit', (e) => {
             e.preventDefault();
             outputDiv.innerHTML = '';
             errorDiv.style.display = 'none';
-            successDiv.style.display = 'none';
             stopButton.style.display = 'block';
 
             const filename = document.getElementById('filename').value;
@@ -161,8 +157,6 @@
                     eventSource.close();
                     stopButton.style.display = 'none';
                 } else if (data.type === 'done') {
-                    successDiv.textContent = 'Generación completada. Descargando archivo...';
-                    successDiv.style.display = 'block';
                     eventSource.close();
                     stopButton.style.display = 'none';
                     window.location.href = `/download?filename=${filename}`;
