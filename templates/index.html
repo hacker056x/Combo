@@ -1,43 +1,4 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -132,6 +93,36 @@
         const errorDiv = document.getElementById('error');
         let eventSource = null;
 
+        function initiateDownload(filename, retries = 3, delay = 1000) {
+            const url = `/download?filename=${encodeURIComponent(filename)}`;
+            fetch(url)
+                .then(response => {
+                    if (response.ok) {
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `${filename}.txt`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    } else {
+                        if (retries > 0) {
+                            setTimeout(() => initiateDownload(filename, retries - 1, delay * 2), delay);
+                        } else {
+                            errorDiv.textContent = 'Error: No se pudo descargar el archivo. Intenta de nuevo.';
+                            errorDiv.style.display = 'block';
+                        }
+                    }
+                })
+                .catch(() => {
+                    if (retries > 0) {
+                        setTimeout(() => initiateDownload(filename, retries - 1, delay * 2), delay);
+                    } else {
+                        errorDiv.textContent = 'Error: Fallo en la conexión para descargar el archivo.';
+                        errorDiv.style.display = 'block';
+                    }
+                });
+        }
+
         form.addEventListener('submit', (e) => {
             e.preventDefault();
             outputDiv.innerHTML = '';
@@ -142,7 +133,7 @@
             const comboCount = document.getElementById('combo_count').value;
             const suffixes = document.getElementById('suffixes').value;
 
-            eventSource = new EventSource(`/generate_stream?filename=${filename}&combo_count=${comboCount}&suffixes=${suffixes}`);
+            eventSource = new EventSource(`/generate_stream?filename=${encodeURIComponent(filename)}&combo_count=${comboCount}&suffixes=${suffixes}`);
             
             eventSource.onmessage = (event) => {
                 const data = JSON.parse(event.data);
@@ -159,7 +150,7 @@
                 } else if (data.type === 'done') {
                     eventSource.close();
                     stopButton.style.display = 'none';
-                    window.location.href = `/download?filename=${filename}`;
+                    initiateDownload(filename);
                 }
             };
 
@@ -175,7 +166,7 @@
             if (eventSource) {
                 eventSource.close();
                 const filename = document.getElementById('filename').value;
-                window.location.href = `/download?filename=${filename}`;
+                initiateDownload(filename);
                 stopButton.style.display = 'none';
             }
         });
