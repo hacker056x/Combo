@@ -111,12 +111,13 @@ def download():
     temp_path = os.path.join(temp_dir, f"{filename}.txt")
 
     if os.path.exists(temp_path):
-        return send_file(
+        response = send_file(
             temp_path,
             as_attachment=True,
             download_name=f"{filename}.txt",
             mimetype='text/plain'
         )
+        return response
     else:
         return render_template('index.html', error="Archivo no encontrado. Por favor, genera los combos nuevamente.")
 
