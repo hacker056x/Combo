@@ -54,11 +54,14 @@
         button:hover { background-color: #218838; }
         .error { color: red; }
         .success { color: green; }
+        #combo-output { margin-top: 20px; max-height: 300px; overflow-y: auto; background: white; padding: 10px; border-radius: 4px; border: 1px solid #ccc; }
+        #stop-button { background-color: #dc3545; margin-top: 10px; }
+        #stop-button:hover { background-color: #c82333; }
     </style>
 </head>
 <body>
     <h1>Generador de Combos IPTV</h1>
-    <form method="POST" action="/generate">
+    <form id="combo-form">
         <label for="filename">Nombre del archivo de combo (sin extensión):</label>
         <input type="text" name="filename" id="filename" required placeholder="Ejemplo: micombo">
         
@@ -84,14 +87,104 @@
             <option value="15">Sin variación</option>
         </select>
         
-        <button type="submit">Generar y Descargar</button>
+        <button type="submit">Generar y Mostrar</button>
     </form>
-    {% if error %}
-        <p class="error">{{ error }}</p>
-    {% endif %}
-    {% if success %}
-        <p class="success">{{ success }}</p>
-    {% endif %}
-<h1>By @hacker056</h1>
+    <button id="stop-button" style="display: none;">Detener y Descargar</button>
+    <div id="combo-output"></div>
+    <p id="error" class="error" style="display: none;"></p>
+    <p id="success" class="success" style="display: none;"></p>
+    
+    <h1>By @hacker056</h1>
+
+    <script>
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+            return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+            if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+                try {
+                    var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                    var firstSheetName = workbook.SheetNames[0];
+                    var worksheet = workbook.Sheets[firstSheetName];
+                    var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                    var filteredData = jsonData.filter(row => row.some(filledCell));
+                    var headerRowIndex = filteredData.findIndex((row, index) =>
+                        row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                    );
+                    if (headerRowIndex === -1 || headerRowIndex > 25) {
+                        headerRowIndex = 0;
+                    }
+                    var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
+                    csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                    return csv;
+                } catch (e) {
+                    console.error(e);
+                    return "";
+                }
+            }
+            return gk_fileData[filename] || "";
+        }
+
+        const form = document.getElementById('combo-form');
+        const stopButton = document.getElementById('stop-button');
+        const outputDiv = document.getElementById('combo-output');
+        const errorDiv = document.getElementById('error');
+        const successDiv = document.getElementById('success');
+        let eventSource = null;
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            outputDiv.innerHTML = '';
+            errorDiv.style.display = 'none';
+            successDiv.style.display = 'none';
+            stopButton.style.display = 'block';
+
+            const filename = document.getElementById('filename').value;
+            const comboCount = document.getElementById('combo_count').value;
+            const suffixes = document.getElementById('suffixes').value;
+
+            eventSource = new EventSource(`/generate_stream?filename=${filename}&combo_count=${comboCount}&suffixes=${suffixes}`);
+            
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'combo') {
+                    const combo = document.createElement('div');
+                    combo.textContent = data.value;
+                    outputDiv.appendChild(combo);
+                    outputDiv.scrollTop = outputDiv.scrollHeight;
+                } else if (data.type === 'error') {
+                    errorDiv.textContent = data.value;
+                    errorDiv.style.display = 'block';
+                    eventSource.close();
+                    stopButton.style.display = 'none';
+                } else if (data.type === 'done') {
+                    successDiv.textContent = 'Generación completada. Descargando archivo...';
+                    successDiv.style.display = 'block';
+                    eventSource.close();
+                    stopButton.style.display = 'none';
+                    window.location.href = `/download?filename=${filename}`;
+                }
+            };
+
+            eventSource.onerror = () => {
+                errorDiv.textContent = 'Error en la conexión con el servidor.';
+                errorDiv.style.display = 'block';
+                eventSource.close();
+                stopButton.style.display = 'none';
+            };
+        });
+
+        stopButton.addEventListener('click', () => {
+            if (eventSource) {
+                eventSource.close();
+                const filename = document.getElementById('filename').value;
+                window.location.href = `/download?filename=${filename}`;
+                stopButton.style.display = 'none';
+            }
+        });
+    </script>
 </body>
 </html>
