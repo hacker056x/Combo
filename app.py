@@ -5,8 +5,13 @@ import tempfile
 from flask import Flask, request, send_file, render_template, Response, stream_with_context
 from collections import deque
 import time
+import logging
 
 app = Flask(__name__)
+
+# Configurar logging para depuración
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 def generate_combo(selected_suffix):
     name = names.get_first_name()
@@ -67,11 +72,16 @@ def generate_stream():
     combo_count = int(request.args.get('combo_count', 0))
     selected_suffix = request.args.get('suffixes')
 
+    logger.debug(f"Iniciando generación para filename={filename}, combo_count={combo_count}, suffixes={selected_suffix}")
+
     if not filename:
+        logger.error("Nombre de archivo no proporcionado")
         return Response('{"type":"error","value":"El nombre del archivo es obligatorio."}', mimetype='text/event-stream')
     if combo_count <= 0 or combo_count > 100000:
+        logger.error(f"Cantidad de combos inválida: {combo_count}")
         return Response('{"type":"error","value":"La cantidad de combos debe estar entre 1 y 100,000."}', mimetype='text/event-stream')
     if not selected_suffix or not selected_suffix.isdigit():
+        logger.error("Variación de nombre de usuario no seleccionada")
         return Response('{"type":"error","value":"Debes seleccionar una variación de nombre de usuario."}', mimetype='text/event-stream')
 
     selected_suffix = int(selected_suffix)
@@ -79,6 +89,7 @@ def generate_stream():
     temp_path = temp_file.name
     app.config['temp_files'] = app.config.get('temp_files', {})
     app.config['temp_files'][filename] = temp_path
+    logger.debug(f"Archivo temporal creado: {temp_path}")
 
     def generate():
         unique_combos = set()
@@ -96,11 +107,15 @@ def generate_stream():
                     if len(buffer) == buffer.maxlen:
                         temp_file.writelines(buffer)
                         buffer.clear()
+                        logger.debug(f"Buffer escrito en archivo temporal: {temp_path}")
             if buffer:
                 temp_file.writelines(buffer)
+                logger.debug(f"Buffer final escrito en archivo temporal: {temp_path}")
             temp_file.close()
             yield f'data: {{"type":"done","value":"Generación completada."}}\n\n'
+            logger.debug("Generación completada")
         except Exception as e:
+            logger.error(f"Error durante la generación: {str(e)}")
             yield f'data: {{"type":"error","value":"Error al generar combos: {str(e)}"}}\n\n'
             temp_file.close()
 
@@ -111,18 +126,27 @@ def download():
     filename = request.args.get('filename', '').strip()
     temp_path = app.config.get('temp_files', {}).get(filename)
 
+    logger.debug(f"Solicitud de descarga para filename={filename}, temp_path={temp_path}")
+
     if temp_path and os.path.exists(temp_path):
-        response = send_file(
-            temp_path,
-            as_attachment=True,
-            download_name=f"{filename}.txt",
-            mimetype='text/plain'
-        )
-        # Marcar el archivo para limpieza después de la descarga
-        app.config['temp_files_to_clean'] = app.config.get('temp_files_to_clean', set())
-        app.config['temp_files_to_clean'].add(temp_path)
-        return response
+        logger.debug(f"Enviando archivo: {temp_path}")
+        try:
+            response = send_file(
+                temp_path,
+                as_attachment=True,
+                download_name=f"{filename}.txt",
+                mimetype='text/plain'
+            )
+            # Marcar el archivo para limpieza después de la descarga
+            app.config['temp_files_to_clean'] = app.config.get('temp_files_to_clean', set())
+            app.config['temp_files_to_clean'].add(temp_path)
+            logger.debug(f"Archivo {temp_path} marcado para limpieza")
+            return response
+        except Exception as e:
+            logger.error(f"Error al enviar archivo: {str(e)}")
+            return render_template('index.html', error=f"Error al descargar el archivo: {str(e)}")
     else:
+        logger.error(f"Archivo no encontrado: {temp_path}")
         return render_template('index.html', error="Archivo no encontrado. Por favor, genera los combos nuevamente.")
 
 @app.teardown_request
@@ -133,16 +157,18 @@ def cleanup_temp_files(exception=None):
             try:
                 os.remove(temp_path)
                 temp_files_to_clean.remove(temp_path)
-            except:
-                pass
+                logger.debug(f"Archivo eliminado: {temp_path}")
+            except Exception as e:
+                logger.error(f"Error al eliminar archivo {temp_path}: {str(e)}")
     temp_files = app.config.get('temp_files', {})
     for fname, temp_path in list(temp_files.items()):
         if temp_path not in temp_files_to_clean and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
                 del temp_files[fname]
-            except:
-                pass
+                logger.debug(f"Archivo obsoleto eliminado: {temp_path}")
+            except Exception as e:
+                logger.error(f"Error al eliminar archivo obsoleto {temp_path}: {str(e)}")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
