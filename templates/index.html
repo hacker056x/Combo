@@ -132,7 +132,7 @@
         const errorDiv = document.getElementById('error');
         let eventSource = null;
 
-        function initiateDownload(filename, retries = 3, delay = 2000) {
+        function initiateDownload(filename, retries = 5, delay = 3000) {
             console.log(`Intentando descargar: /download?filename=${filename}, reintentos restantes: ${retries}`);
             const url = `/download?filename=${encodeURIComponent(filename)}`;
             fetch(url)
@@ -152,7 +152,7 @@
                     } else {
                         if (retries > 0) {
                             console.log(`Reintentando descarga en ${delay}ms`);
-                            setTimeout(() => initiateDownload(filename, retries - 1, delay * 2), delay);
+                            setTimeout(() => initiateDownload(filename, retries - 1, delay * 1.5), delay);
                         } else {
                             errorDiv.textContent = 'Error: No se pudo descargar el archivo de combos. Intenta de nuevo.';
                             errorDiv.style.display = 'block';
@@ -164,7 +164,7 @@
                     console.error(`Error en fetch: ${err}`);
                     if (retries > 0) {
                         console.log(`Reintentando descarga en ${delay}ms`);
-                        setTimeout(() => initiateDownload(filename, retries - 1, delay * 2), delay);
+                        setTimeout(() => initiateDownload(filename, retries - 1, delay * 1.5), delay);
                     } else {
                         errorDiv.textContent = 'Error: Fallo en la conexión para descargar el archivo.';
                         errorDiv.style.display = 'block';
@@ -179,7 +179,7 @@
             errorDiv.style.display = 'none';
             stopButton.style.display = 'block';
 
-            const filename = document.getElementById('filename').value;
+            const filename = document.getElementById('filename').value.replace(/[^a-zA-Z0-9_-]/g, '_'); // Sanitizar nombre
             const comboCount = document.getElementById('combo_count').value;
             const suffixes = document.getElementById('suffixes').value;
 
@@ -219,7 +219,7 @@
         stopButton.addEventListener('click', () => {
             if (eventSource) {
                 eventSource.close();
-                const filename = document.getElementById('filename').value;
+                const filename = document.getElementById('filename').value.replace(/[^a-zA-Z0-9_-]/g, '_');
                 console.log('Generación detenida, iniciando descarga');
                 initiateDownload(filename);
                 stopButton.style.display = 'none';
