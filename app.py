@@ -118,15 +118,26 @@ def download():
             download_name=f"{filename}.txt",
             mimetype='text/plain'
         )
+        # Marcar el archivo para limpieza después de la descarga
+        app.config['temp_files_to_clean'] = app.config.get('temp_files_to_clean', set())
+        app.config['temp_files_to_clean'].add(temp_path)
         return response
     else:
         return render_template('index.html', error="Archivo no encontrado. Por favor, genera los combos nuevamente.")
 
 @app.teardown_request
 def cleanup_temp_files(exception=None):
+    temp_files_to_clean = app.config.get('temp_files_to_clean', set())
+    for temp_path in list(temp_files_to_clean):
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+                temp_files_to_clean.remove(temp_path)
+            except:
+                pass
     temp_files = app.config.get('temp_files', {})
     for fname, temp_path in list(temp_files.items()):
-        if os.path.exists(temp_path):
+        if temp_path not in temp_files_to_clean and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
                 del temp_files[fname]
